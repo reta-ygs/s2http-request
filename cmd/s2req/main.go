@@ -15,6 +15,7 @@ import (
 
 	"github.com/secureta/s2http-request/internal/config"
 	"github.com/secureta/s2http-request/internal/http"
+	"github.com/secureta/s2http-request/internal/nuclei"
 	"github.com/secureta/s2http-request/internal/parser"
 	"gopkg.in/yaml.v3"
 )
@@ -371,11 +372,64 @@ func validateStdinInput(p *parser.Parser, verbose bool) error {
 	return nil
 }
 
+func convertNucleiFile(inputPath string, outputPath string) error {
+	data, err := os.ReadFile(inputPath) // #nosec G304 -- CLI intentionally reads a user-supplied template path.
+	if err != nil {
+		return fmt.Errorf("failed to read nuclei template: %w", err)
+	}
+
+	report, err := nuclei.Convert(data, inputPath)
+	if err != nil {
+		return err
+	}
+
+	output, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode conversion report: %w", err)
+	}
+	output = append(output, '\n')
+
+	if outputPath == "" || outputPath == "-" {
+		_, err = os.Stdout.Write(output)
+		return err
+	}
+	return os.WriteFile(outputPath, output, 0600)
+}
+
+func handleConvertNucleiCommand() {
+	convertCmd := flag.NewFlagSet("convert-nuclei", flag.ExitOnError)
+	output := convertCmd.String("output", "", "Output JSON report path (default: stdout)")
+	showVersion := convertCmd.Bool("version", false, "Show version")
+	if err := convertCmd.Parse(os.Args[2:]); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse convert-nuclei arguments: %v\n", err)
+		os.Exit(1)
+	}
+	if *showVersion {
+		fmt.Printf("s2req version %s\n", version)
+		return
+	}
+
+	args := convertCmd.Args()
+	if len(args) != 1 {
+		fmt.Fprintf(os.Stderr, "Usage: %s convert-nuclei [options] <nuclei-template.yaml>\n", os.Args[0])
+		convertCmd.PrintDefaults()
+		os.Exit(1)
+	}
+	if err := convertNucleiFile(args[0], *output); err != nil {
+		log.Fatalf("failed to convert nuclei template: %v", err)
+	}
+}
+
 func main() {
 
 	if len(os.Args) > 1 && os.Args[1] == "validate" {
 		// Handle validate subcommand
 		handleValidateCommand()
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "convert-nuclei" {
+		// Handle Nuclei template analyzer/converter subcommand
+		handleConvertNucleiCommand()
 		return
 	}
 

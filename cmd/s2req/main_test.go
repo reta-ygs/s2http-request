@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -183,6 +186,70 @@ func TestVarFlags_Override(t *testing.T) {
 
 	if len(flags) != 1 {
 		t.Errorf("Expected 1 flag, got %d", len(flags))
+	}
+}
+
+func TestConvertNucleiFileWritesJSONReport(t *testing.T) {
+	tmpDir := t.TempDir()
+	inputPath := filepath.Join(tmpDir, "template.yaml")
+	outputPath := filepath.Join(tmpDir, "report.json")
+
+	input := []byte(`id: cli-demo
+info:
+  name: CLI demo
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/submit?x=1"
+    body: "demo=true"
+    extractors:
+      - type: regex
+        regex: ["token=(.*)"]
+`)
+	if err := os.WriteFile(inputPath, input, 0600); err != nil {
+		t.Fatalf("failed to write input: %v", err)
+	}
+
+	if err := convertNucleiFile(inputPath, outputPath); err != nil {
+		t.Fatalf("convertNucleiFile returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("failed to read output: %v", err)
+	}
+
+	var report struct {
+		TemplateID string `json:"template_id"`
+		Requests   []struct {
+			Method string      `json:"method"`
+			Path   interface{} `json:"path"`
+			Query  []struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+			} `json:"query"`
+		} `json:"requests"`
+		Unsupported []struct {
+			Feature string `json:"feature"`
+		} `json:"unsupported"`
+	}
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, string(data))
+	}
+	if report.TemplateID != "cli-demo" {
+		t.Fatalf("template_id = %q, want cli-demo", report.TemplateID)
+	}
+	if len(report.Requests) != 1 || report.Requests[0].Method != "POST" {
+		t.Fatalf("requests = %#v, want one POST request", report.Requests)
+	}
+	if report.Requests[0].Path != "/submit" {
+		t.Fatalf("path = %#v, want /submit", report.Requests[0].Path)
+	}
+	if len(report.Requests[0].Query) != 1 || report.Requests[0].Query[0].Key != "x" || report.Requests[0].Query[0].Value != "1" {
+		t.Fatalf("query = %#v, want x=1", report.Requests[0].Query)
+	}
+	if len(report.Unsupported) != 1 || report.Unsupported[0].Feature != "extractors" {
+		t.Fatalf("unsupported = %#v, want extractors", report.Unsupported)
 	}
 }
 

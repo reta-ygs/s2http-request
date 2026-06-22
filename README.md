@@ -380,6 +380,23 @@ s2http-request/
     └── functions/
 ```
 
+## Nuclei Template Conversion
+
+`s2req convert-nuclei` analyzes a Nuclei HTTP template and emits a JSON conversion report.
+The initial converter intentionally supports only a safe HTTP request subset and records unsupported scanner semantics explicitly.
+
+```bash
+s2req convert-nuclei -output report.json template.yaml
+```
+
+The report contains:
+
+- `template_id` and `info` metadata from the Nuclei template
+- converted s2http `requests`
+- `unsupported` entries for features that need a later runner/evaluator layer, such as non-HTTP protocols, `flow`, `raw`, `matchers`, and `extractors`
+
+The converter keeps URL query parameters separate from `path` and emits query parameters as ordered key-value pairs so duplicate keys can be preserved by later request-writing improvements.
+
 ## Development
 
 Quality checks are shared between GitHub Actions and local git hooks via `scripts/quality.sh`.
